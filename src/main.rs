@@ -1,4 +1,4 @@
-use std::{error::Error, io, time::Duration};
+use std::{error::Error, io };
 
 use crossterm::{
     event::{self, Event, KeyCode},
@@ -13,6 +13,7 @@ use ratatui::{
     widgets::{Block, Borders, Paragraph, Wrap},
 };
 use reqwest::Client;
+
 use tokio::sync::mpsc;
 
 struct App {
@@ -31,8 +32,14 @@ async fn main() -> Result<(), Box<dyn Error>> {
     let (tx, mut rx) = mpsc::channel::<Message>(16);
 
     tokio::spawn(async move {
-        let mut interval = tokio::time::interval(Duration::from_secs(5));
+        //Http polling rate
+        let mut interval = tokio::time::interval(tokio::time::Duration::from_secs(5));
 
+
+        let _ = tx.send(
+            Message::Status("I'm Raul. Bye Qt!, I'm doing TUIs now!".to_string())
+        ).await;
+        let _ = tokio::time::sleep(tokio::time::Duration::from_millis(5000)).await; 
         loop {
             interval.tick().await;
 
@@ -93,8 +100,8 @@ async fn main() -> Result<(), Box<dyn Error>> {
 
 async fn fetch_body(client: &Client) -> Result<String, reqwest::Error> {
     client
-        .get("https://httpbin.org/get")
-        .send()
+        .get("https://httpbin.org/get")//creates a build request
+        .send()//sends the build request
         .await?
         .error_for_status()?
         .text()
@@ -113,17 +120,17 @@ async fn run_app(
                 Message::Body(body) => app.body = body,
             }
         }
-
+        //Render loop
         terminal.draw(|frame| ui(frame, app))?;
 
-        if event::poll(Duration::from_millis(50))?
+        if event::poll(std::time::Duration::from_millis(50))?
             && let Event::Key(key) = event::read()?
             && key.code == KeyCode::Char('q')
         {
             return Ok(());
         }
-
-        tokio::time::sleep(Duration::from_millis(16)).await;
+        //ui frame rate
+        tokio::time::sleep(tokio::time::Duration::from_millis(33)).await;
     }
 }
 
