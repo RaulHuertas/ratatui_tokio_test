@@ -123,19 +123,24 @@ async fn run_app(
         //Render loop
         terminal.draw(|frame| ui(frame, app))?;
 
-        if event::poll(std::time::Duration::from_millis(50))?
-            && let Event::Key(key) = event::read()?
-            && key.code == KeyCode::Char('q')
-        {
-            return Ok(());
+        if event::poll(std::time::Duration::from_millis(9))?
+            && let Event::Key(key) = event::read()?{
+            match key.code {
+                KeyCode::Char('q')=>{
+                    return Ok(());//exit application
+                }
+                _ => {
+                    //do nothing
+                }
+            }
         }
-        //ui frame rate
-        tokio::time::sleep(tokio::time::Duration::from_millis(33)).await;
+        //UI FRAME RATE
+        tokio::time::sleep(tokio::time::Duration::from_millis(7)).await;
     }
 }
 
 fn ui(frame: &mut Frame<'_>, app: &App) {
-    let chunks = Layout::vertical([Constraint::Length(3), Constraint::Min(1)]).split(frame.area());
+    let chunks = Layout::vertical([Constraint::Length(4), Constraint::Min(1), Constraint::Min(1)]).split(frame.area());
 
     let status = Paragraph::new(app.status.as_str())
         .block(Block::default().title("Status").borders(Borders::ALL));
@@ -148,8 +153,17 @@ fn ui(frame: &mut Frame<'_>, app: &App) {
         )
         .wrap(Wrap { trim: false });
 
+    let test_paragraph = Paragraph::new("Bienvenidos")
+        .block(
+            Block::default()
+                .title("CustomData")
+                .borders(Borders::ALL)
+        )
+        .wrap(Wrap { trim: false });
+
     frame.render_widget(status, chunks[0]);
     frame.render_widget(body, chunks[1]);
+    frame.render_widget(test_paragraph, chunks[2]);
 }
 
 fn restore_terminal(terminal: &mut Terminal<CrosstermBackend<io::Stdout>>) -> io::Result<()> {
