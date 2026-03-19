@@ -15,7 +15,10 @@ use ratatui::{
     style::{Color, Style},
     widgets::{Block, Borders, Paragraph, Wrap},
 };
-use reqwest::Client;
+use reqwest::{
+    Client,
+    header::{ACCEPT_LANGUAGE, HeaderMap, HeaderValue, USER_AGENT},
+};
 
 use tokio::sync::mpsc;
 
@@ -23,28 +26,31 @@ struct App {
     status: String,
     body: String,
     button_rect: Rect,
-    likes_counter : u32
+    likes_counter: u32,
 }
+
 // Manual implementation
 impl Default for App {
     fn default() -> Self {
         App {
-            status: "".to_string(), 
-            body: "".to_string(),       
+            status: "".to_string(),
+            body: "".to_string(),
             button_rect: Rect::default(),
-            likes_counter : 0
+            likes_counter: 0,
         }
     }
 }
 
 enum Message {
     Status(String),
-    Body(String),
+    PostData { body: String, likes: u32 },
 }
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn Error>> {
-    let client = Client::new();
+    let client = Client::builder()
+        .default_headers(default_headers())
+        .build()?;
     let (tx, mut rx) = mpsc::channel::<Message>(16);
 
     tokio::spawn(async move {
@@ -68,9 +74,9 @@ async fn main() -> Result<(), Box<dyn Error>> {
                 break;
             }
 
-            match fetch_body(&client).await {
-                Ok(body) => {
-                    if tx.send(Message::Body(body)).await.is_err() {
+            match fetch_post_data(&client).await {
+                Ok((body, likes)) => {
+                    if tx.send(Message::PostData { body, likes }).await.is_err() {
                         break;
                     }
 
@@ -97,9 +103,9 @@ async fn main() -> Result<(), Box<dyn Error>> {
 
     let mut app = App {
         status: "Starting...".to_string(),
-        body: "Waiting for first response...".to_string(),
+        body: "Waiting for first Instagram response...".to_string(),
         button_rect: Rect::default(),
-        likes_counter : 0,
+        likes_counter: 0,
     };
 
     enable_raw_mode()?;
@@ -117,14 +123,86 @@ async fn main() -> Result<(), Box<dyn Error>> {
     Ok(())
 }
 
-async fn fetch_body(client: &Client) -> Result<String, reqwest::Error> {
-    client
-        .get("https://httpbin.org/get") //creates a build request
-        .send() //sends the build request
+fn default_headers() -> HeaderMap {
+    let mut headers = HeaderMap::new();
+    headers.insert(
+        USER_AGENT,
+        HeaderValue::from_static(
+            "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/134.0.0.0 Safari/537.36",
+        ),
+    );
+    headers.insert(ACCEPT_LANGUAGE, HeaderValue::from_static("en-US,en;q=0.9"));
+    headers
+}
+
+async fn fetch_post_data(client: &Client) -> Result<(String, u32), Box<dyn Error + Send + Sync>> {
+    let html = client
+        .get("https://www.instagram.com/p/DV4eJZUDeJ5/")
+        .send()
         .await?
         .error_for_status()?
         .text()
-        .await
+        .await?;
+
+    let description = extract_description(&html).ok_or_else(|| {
+        io::Error::other("Instagram metadata description was not found in the response")
+    })?;
+    let likes = parse_like_count(&description)
+        .ok_or_else(|| io::Error::other("Could not parse the Instagram like count"))?;
+
+    Ok((description, likes))
+}
+
+fn extract_description(html: &str) -> Option<String> {
+    extract_meta_content(html, "property=\"og:description\"")
+        .or_else(|| extract_meta_content(html, "name=\"description\""))
+}
+
+fn extract_meta_content(html: &str, marker: &str) -> Option<String> {
+    html.split("<meta")
+        .filter_map(|fragment| fragment.split('>').next())
+        .find(|tag| tag.contains(marker))
+        .and_then(extract_content_attribute)
+        .map(decode_html_entities)
+}
+
+fn extract_content_attribute(tag: &str) -> Option<String> {
+    if let Some(start) = tag.find("content=\"") {
+        let rest = &tag[start + "content=\"".len()..];
+        let end = rest.find('"')?;
+        return Some(rest[..end].to_string());
+    }
+
+    if let Some(start) = tag.find("content='") {
+        let rest = &tag[start + "content='".len()..];
+        let end = rest.find('\'')?;
+        return Some(rest[..end].to_string());
+    }
+
+    None
+}
+
+fn decode_html_entities(text: String) -> String {
+    text.replace("&quot;", "\"")
+        .replace("&#x27;", "'")
+        .replace("&amp;", "&")
+        .replace("&lt;", "<")
+        .replace("&gt;", ">")
+}
+
+fn parse_like_count(description: &str) -> Option<u32> {
+    let likes_index = description.find(" likes")?;
+    let raw_count = description[..likes_index].trim();
+    let digits: String = raw_count
+        .chars()
+        .filter(|character| character.is_ascii_digit())
+        .collect();
+
+    if digits.is_empty() {
+        return None;
+    }
+
+    digits.parse().ok()
 }
 
 async fn run_app(
@@ -136,7 +214,10 @@ async fn run_app(
         while let Ok(message) = rx.try_recv() {
             match message {
                 Message::Status(status) => app.status = status,
-                Message::Body(body) => app.body = body,
+                Message::PostData { body, likes } => {
+                    app.body = body;
+                    app.likes_counter = likes;
+                }
             }
         }
         //Render loop
@@ -207,7 +288,7 @@ fn ui(frame: &mut Frame<'_>, app: &mut App) {
     let body = Paragraph::new(app.body.as_str())
         .block(
             Block::default()
-                .title("HTTP Response")
+                .title("Instagram Post")
                 .borders(Borders::ALL),
         )
         .wrap(Wrap { trim: false });
@@ -219,10 +300,10 @@ fn ui(frame: &mut Frame<'_>, app: &mut App) {
 
     let button = Paragraph::new("Click Me")
         .block(
-            Block::default().
-            title("Action").
-            borders(Borders::ALL).
-            border_style(Style::default().fg(Color::Rgb(100, 12, 250)))
+            Block::default()
+                .title("Action")
+                .borders(Borders::ALL)
+                .border_style(Style::default().fg(Color::Rgb(100, 12, 250))),
         )
         .alignment(Alignment::Center);
 
@@ -240,4 +321,35 @@ fn restore_terminal(terminal: &mut Terminal<CrosstermBackend<io::Stdout>>) -> io
         DisableMouseCapture
     )?;
     terminal.show_cursor()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{extract_description, parse_like_count};
+
+    #[test]
+    fn extracts_og_description_content() {
+        let html = r#"<html><head><meta property="og:description" content="13 likes, 0 comments - sample text"></head></html>"#;
+
+        let description = extract_description(html);
+
+        assert_eq!(
+            description.as_deref(),
+            Some("13 likes, 0 comments - sample text")
+        );
+    }
+
+    #[test]
+    fn parses_like_count_from_description() {
+        let likes = parse_like_count("13 likes, 0 comments - sample text");
+
+        assert_eq!(likes, Some(13));
+    }
+
+    #[test]
+    fn parses_like_count_with_thousands_separator() {
+        let likes = parse_like_count("1,234 likes, 5 comments - sample text");
+
+        assert_eq!(likes, Some(1234));
+    }
 }
