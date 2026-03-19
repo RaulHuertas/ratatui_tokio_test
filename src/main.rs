@@ -23,6 +23,18 @@ struct App {
     status: String,
     body: String,
     button_rect: Rect,
+    likes_counter : u32
+}
+// Manual implementation
+impl Default for App {
+    fn default() -> Self {
+        App {
+            status: "".to_string(), 
+            body: "".to_string(),       
+            button_rect: Rect::default(),
+            likes_counter : 0
+        }
+    }
 }
 
 enum Message {
@@ -87,6 +99,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
         status: "Starting...".to_string(),
         body: "Waiting for first response...".to_string(),
         button_rect: Rect::default(),
+        likes_counter : 0,
     };
 
     enable_raw_mode()?;
@@ -199,7 +212,7 @@ fn ui(frame: &mut Frame<'_>, app: &mut App) {
         )
         .wrap(Wrap { trim: false });
 
-    let test_paragraph = Paragraph::new("Bienvenidos")
+    let test_paragraph = Paragraph::new(app.likes_counter.to_string())
         .block(Block::default().title("CustomData").borders(Borders::ALL))
         .alignment(Alignment::Center)
         .wrap(Wrap { trim: false });
