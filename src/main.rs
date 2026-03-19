@@ -8,8 +8,8 @@ use crossterm::{
 use ratatui::{
     Terminal,
     backend::CrosstermBackend,
-    layout::{Constraint, Layout},
-    prelude::Frame,
+    layout::{Constraint, Layout, Alignment},
+    prelude::{Frame},
     widgets::{Block, Borders, Paragraph, Wrap},
 };
 use reqwest::Client;
@@ -159,6 +159,7 @@ fn ui(frame: &mut Frame<'_>, app: &App) {
                 .title("CustomData")
                 .borders(Borders::ALL)
         )
+        .alignment(Alignment::Center)
         .wrap(Wrap { trim: false });
 
     frame.render_widget(status, chunks[0]);
