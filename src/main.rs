@@ -48,7 +48,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
                 "I'm Raul. Bye Qt!, I'm doing TUIs now!".to_string(),
             ))
             .await;
-        let _ = tokio::time::sleep(tokio::time::Duration::from_millis(5000)).await;
+        let _ = tokio::time::sleep(tokio::time::Duration::from_millis(1000)).await;
         loop {
             interval.tick().await;
 
